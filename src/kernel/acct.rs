@@ -125,30 +125,46 @@ impl BsdAcctStruct {
 
         let mut elapsed = nsec_to_ahz(run_time);
 
+    
         #[cfg(feature = "acct_v3")]
-            {
-                ac.ac_etime = encode_float(elapsed);
-            }
-            #[cfg(not(feature = "acct_v3"))]
-            {
-                ac.ac_etime = encode_comp_t(if elapsed < usize::MAX as u64 { elapsed } else { usize::MAX as u64 });
-            }
+        {
+            ac.ac_etime = encode_float(elapsed);
+        }
+        #[cfg(not(feature = "acct_v3"))]
+        {
+            ac.ac_etime = encode_comp_t(if elapsed < usize::MAX as u64 { elapsed } else { usize::MAX as u64 });
+        }
+        #[cfg(any(feature = "acct_v1", feature = "acct_v2"))]
+        {
+            let etime = encode_comp2_t(elapsed);
+            ac.ac_etime_hi = (etime >> 16) as u16;
+            ac.ac_etime_lo = etime as u16;
+        }
 
-            #[cfg(any(feature = "acct_v1", feature = "acct_v2"))]
-            {
-                let etime = encode_comp2_t(elapsed);
-                ac.ac_etime_hi = (etime >> 16) as u16;
-                ac.ac_etime_lo = etime as u16;
-            }
+        // get real seconds
+        let btime = ktime_get_rl_seconds() - (elapsed / AHZ);
+        ac.ac_btime = btime.clamp(0, u32::MAX as i64) as u32;
 
-            // C's do_div(elapsed, AHZ) modifies elapsed in-place to equal (elapsed / AHZ)
-            let btime = ktime_get_real_seconds() - (elapsed / AHZ);
-            ac.ac_btime = btime.clamp(0, u32::MAX as i64) as u32;
+        #[cfg(feature = "acct_v2")]
+        {
+            ac.ac_hz = AHZ;
+        }
 
-            #[cfg(feature = "acct_v2")]
-            {
-                ac.ac_ahz = AHZ;
-            }
+        // Thread-safe Data Capture (Sighand Spinlock Boundary)
+        {
+            let _lock = cur_task.sighand.lock_irq();
+            let tty = (*cur_task.signal).tty;
+
+            ac.ac_tty = if !tty.is_null() { old_encode_dev(tty_devnum(tty)) } else { 0 };
+
+            ac.ac_utime = encode_comp_t(nsec_to_ahz((*pacct).ac_utime));
+            ac.ac_stime = encode_comp_t(nsec_to_ahz((*pacct).ac_stime));
+            ac.ac_flag = (*pacct).ac_flag;
+            ac.ac_mem = encode_comp_t((*pacct).ac_mem);
+            ac.ac_minflt = encode_comp_t((*pacct).ac_minflt);
+            ac.ac_majflt = encode_comp_t((*pacct).ac_majflt);
+            ac.ac_exitcode = (*pacct).ac_exitcode;
+        } // Lock is automatically released here (RAID/Drop semantics)
     }
 
     fn write_process(&mut self) {
