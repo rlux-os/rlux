@@ -48,6 +48,10 @@ pub const AGROUP: u8    = 0x20; // Was the last task of the process
 
 static ACCT_PARAM: [i32; 3] = [4, 2, 30];
 
+// Assuming acct_t is a typedef, for a specific
+// account layout.
+pub type AcctT = u32;
+
 pub const ACCT_COMM: usize = 16;
 pub const RESUME: i32  =  ACCT_PARAM[0];     // free space - resume
 pub const SUSPEND: i32 =  ACCT_PARAM[1];     // free space - suspend
@@ -78,4 +82,22 @@ pub struct BsdAcctStruct {
     pub done: Completion,       // done: A synchronization primitive used to wait for a 
                                 // task to complete.
     pub ac: crate::acct::acct,  // ac: The actual acct data structure we translated earlier
+}
+
+impl BsdAcctStruct {
+
+    // Fills the accounting structure
+    // with process info.
+    fn fill_ac(&mut self) {
+        let cur_task = current();
+        let pacct = &(*cur_task.signal).pacct;
+        let file = match self.file {
+            Some(f) => &*f,
+            None => return,
+        };
+    }
+
+    fn write_process(&mut self) {
+        // TODO: Implementation
+    }
 }
