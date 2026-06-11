@@ -28,6 +28,7 @@
 use kernel::alloc::flags;
 use kernel::alloc:KBox;
 use kernel::uapi::acct;
+use core::sync::atomic::AtomicI64;
 // ===========================================================
 // comp_t is a 16-bit "floating" point number with a 3-bit
 // base-8 exponent and a 13-bit fraction.
@@ -52,3 +53,29 @@ pub const RESUME: i32  =  ACCT_PARAM[0];     // free space - resume
 pub const SUSPEND: i32 =  ACCT_PARAM[1];     // free space - suspend
 pub const ACCT_TIMEOUT: i32 = ACCT_PARAM[2]; // Second timeout between checks
 
+pub struct BsdAcctStruct {
+    pub pin: FsPin,             // pin: In C, this hooks into the file system in system,
+                                // to provent unmounting. For now, we stub it out or rep-
+                                // resent it as a pointer/custom type.
+    pub count: AtomicI64,       // count: atomic_long_t handles thread-safe reference counting,
+                                // on 64-bit architectures, atomic_long_t maps directly to 
+                                // AtomicI64.
+    pub rcu: RcuHead,           // rcu: Read-Copy Update reference head used for deferred, safe
+                                // memory deletion
+    pub lock: Mutex,            // lock: A standard kernel mutex lock to protect this struct
+                                // accross
+                                // threads.
+    pub active: bool,           // Booleans that translate directly to Rust's primitive bool.
+    pub check_space: bool,      // ^^^^
+    pub needcheck: usize;       // needcheck: unsigned long translates to usize.
+    pub file *mut File,         // Raw pointer to a file structure and a PID namespace
+                                // struct. In Rust, pointers to kenrel objects are usually
+                                // wrapper in safe types. But for low level compatibility,
+                                // we can use raw pointers.
+    pub ns *mut PidNamespace,   // ^^^^
+    pub work: WorkStruct,       // work: An asynchronous worker item to check disk space 
+                                // in the background.
+    pub done: Completion,       // done: A synchronization primitive used to wait for a 
+                                // task to complete.
+    pub ac: crate::acct::acct,  // ac: The actual acct data structure we translated earlier
+}
