@@ -95,6 +95,60 @@ impl BsdAcctStruct {
             Some(f) => &*f,
             None => return,
         };
+        let ac = &mut self.ac;
+
+        // Active state checks
+        if timer_is_after(self.needcheck) {
+            self.check_space = false;
+
+            /* Don't fill the ac if nothing will be written */
+            if !self.active {
+                return;
+            }
+        } else {
+            self.check_space = true;
+        }
+
+        ptr::write_bytes(ac, 0, 1);
+
+        // Populate version
+        #[cfg(feature = "acct_v3")]
+        { ac.ac_version = ACCT_VERSION_3 | ACCT_BYTEORDER; }
+        #[cfg(not(feature = "acct_v3"))]
+        { ac.ac_version = ACCT_VERSION_1_2 | ACCT_BYTEORDER; }
+    
+        ac.ac_comm.copy_from_slice_truncated(cur_task.comm());
+
+        // Calculate timers
+        let mut run_time: u64 = ktime_get_ns();
+        run_time -= (&cur_task.group_leader).start_time();
+
+        let mut elapsed = nsec_to_ahz(run_time);
+
+        #[cfg(feature = "acct_v3")]
+            {
+                ac.ac_etime = encode_float(elapsed);
+            }
+            #[cfg(not(feature = "acct_v3"))]
+            {
+                ac.ac_etime = encode_comp_t(if elapsed < usize::MAX as u64 { elapsed } else { usize::MAX as u64 });
+            }
+
+            #[cfg(any(feature = "acct_v1", feature = "acct_v2"))]
+            {
+                let etime = encode_comp2_t(elapsed);
+                ac.ac_etime_hi = (etime >> 16) as u16;
+                ac.ac_etime_lo = etime as u16;
+            }
+
+            // C's do_div(elapsed, AHZ) modifies elapsed in-place to equal (elapsed / AHZ)
+            let btime = ktime_get_real_seconds() - (elapsed / AHZ);
+            ac.ac_btime = btime.clamp(0, u32::MAX as i64) as u32;
+
+            #[cfg(feature = "acct_v2")]
+            {
+                ac.ac_ahz = AHZ;
+            }
     }
 
     fn write_process(&mut self) {
