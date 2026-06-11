@@ -45,5 +45,10 @@ pub const AXSIG: u8     = 0x10; // Killed by a signal
 pub const AGROUP: u8    = 0x20; // Was the last task of the process
                                 // group.
 
+static ACCT_PARAM: [i32; 3] = [4, 2, 30];
 
 pub const ACCT_COMM: usize = 16;
+pub const RESUME: i32  =  ACCT_PARAM[0];     // free space - resume
+pub const SUSPEND: i32 =  ACCT_PARAM[1];     // free space - suspend
+pub const ACCT_TIMEOUT: i32 = ACCT_PARAM[2]; // Second timeout between checks
+
