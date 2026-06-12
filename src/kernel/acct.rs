@@ -165,6 +165,32 @@ impl BsdAcctStruct {
             ac.ac_majflt = encode_comp_t((*pacct).ac_majflt);
             ac.ac_exitcode = (*pacct).ac_exitcode;
         } // Lock is automatically released here (RAID/Drop semantics)
+        let user_ns = (*(*file).f_cred).user_ns;
+        ac.ac_uid = from_kuid_munged(user_ns, cur_task.uid());
+        ac.ac_gid = from_kgid_munged(user_ns, cur_task.gid());
+
+        #[cfg(any(feature = "acct_v1", feature = "acct_v2"))]
+        {
+            ac.ac_uid16 = ac.ac_uid as u16;
+            ac.ac_gid16 = ac.ac_gid as u16;
+        }
+
+        #[cfg(feature = "acct_v3")]
+        {
+            let ns = self.ns.expect("Namespace pointer cannot be null for v3");
+
+            ac.ac_pid = task_tgid_nr_ns(cur_task, ns);
+
+            // RCU Safe Boundary
+            {
+                let _rcu = rcu::read_lock();
+
+                // rcu_dereference equivalent
+
+                let parent = rcu::dereference((*cur_task).real_parent);
+                ac.ac_ppid = task_tgid_nr_ns(parent, ns);
+            } // RCU read unlock happens automaticly.
+        }
     }
 
     fn write_process(&mut self) {
